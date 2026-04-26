@@ -7,33 +7,19 @@
 #include <time.h>
 #include <errno.h>
 
-/* ============================================================
-   STRUCTURA DE DATE
-   Fiecare raport ocupa exact sizeof(Report) bytes pe disc.
-   Accesul la record N se face prin lseek(fd, N*sizeof(Report), SEEK_SET).
-   ============================================================ */
+//structura de date pentru rapoarte
 typedef struct {
-    int    id;
-    char   inspector[50];
+    int id;
+    char inspector[50];
     double latitude;
     double longitude;
-    char   category[20];
-    int    severity;
+    char category[20];
+    int severity;
     time_t timestamp;
-    char   description[100];
+    char description[100];
 } Report;
 
-/* ============================================================
-   PERMISIUNI
-   mode_to_string: converteste st_mode in "rw-rw-r--"
-   check_permission: simuleaza controlul de acces pe roluri
-   ============================================================ */
-
-/*
- * Primeste mode_t (ex: 0664) si scrie in buf un string de 9 caractere
- * de forma "rw-rw-r--". buf trebuie sa aiba cel putin 10 bytes.
- * Verificam fiecare bit individual cu macrourile S_I*.
- */
+//transformarea pentru afisare
 void mode_to_string(mode_t mode, char *buf) {
     buf[0] = (mode & S_IRUSR) ? 'r' : '-';
     buf[1] = (mode & S_IWUSR) ? 'w' : '-';
@@ -47,14 +33,8 @@ void mode_to_string(mode_t mode, char *buf) {
     buf[9] = '\0';
 }
 
-/*
- * Verifica daca rolul dat are voie sa faca operatia op ('r' sau 'w')
- * pe fisierul de la path.
- * manager  = owner  -> verificam bitii USR (S_IRUSR, S_IWUSR)
- * inspector = group -> verificam bitii GRP (S_IRGRP, S_IWGRP)
- * Returneaza 1 daca accesul e permis, 0 daca nu.
- */
-int check_permission(const char *path, const char *role, char op) {
+//verificarea de permisiuni pentru fiecare user care incearca sa faca o operatie
+int check_permission(const char *path, const char *role, char operatie) {
     struct stat st;
     if (stat(path, &st) == -1) {
         perror("check_permission: stat");
@@ -63,21 +43,16 @@ int check_permission(const char *path, const char *role, char op) {
     mode_t mode = st.st_mode;
 
     if (strcmp(role, "manager") == 0) {
-        if (op == 'r') return (mode & S_IRUSR) ? 1 : 0;
-        if (op == 'w') return (mode & S_IWUSR) ? 1 : 0;
+        if (operatie == 'r') return (mode & S_IRUSR) ? 1 : 0;
+        if (operatie == 'w') return (mode & S_IWUSR) ? 1 : 0;
     } else if (strcmp(role, "inspector") == 0) {
-        if (op == 'r') return (mode & S_IRGRP) ? 1 : 0;
-        if (op == 'w') return (mode & S_IWGRP) ? 1 : 0;
+        if (operatie == 'r') return (mode & S_IRGRP) ? 1 : 0;
+        if (operatie == 'w') return (mode & S_IWGRP) ? 1 : 0;
     }
     return 0;
 }
 
-/* ============================================================
-   LOGGER
-   Scrie o linie in logged_district de fiecare data cand se
-   executa o operatie. Format: "timestamp\tuser\trole\taction\n"
-   Folosim write() direct, nu fprintf, asa cum cere specificatia.
-   ============================================================ */
+// Functia de log care scrie de fiecare data cand o actiune este efectuata in fisereul de log
 void log_action(const char *district, const char *role,
                 const char *user, const char *action) {
     char path[256];
@@ -93,28 +68,18 @@ void log_action(const char *district, const char *role,
     close(fd);
 }
 
-/* ============================================================
-   INITIALIZARE DISTRICT
-   Creeaza directorul si cele 3 fisiere cu permisiunile exacte
-   cerute de specificatie. Daca exista deja, nu suprascrie nimic.
-   ============================================================ */
+//Functia de initializare a fiecarui district + setarea de permisiuni
 int init_district(const char *district) {
     char path[256];
-
-    /* Directorul: 750 — manager full, inspector read+execute */
     if (mkdir(district, 0750) == -1 && errno != EEXIST) {
         perror("Eroare creare director");
         return -1;
     }
     chmod(district, 0750);
-
-    /* reports.dat: 664 — ambele roluri pot citi si scrie */
     snprintf(path, sizeof(path), "%s/reports.dat", district);
     int fd = open(path, O_CREAT | O_WRONLY | O_APPEND, 0664);
     if (fd != -1) close(fd);
     chmod(path, 0664);
-
-    /* district.cfg: 640 — doar managerul poate scrie */
     snprintf(path, sizeof(path), "%s/district.cfg", district);
     if (access(path, F_OK) != 0) {
         fd = open(path, O_CREAT | O_WRONLY, 0640);
@@ -124,8 +89,6 @@ int init_district(const char *district) {
         }
     }
     chmod(path, 0640);
-
-    /* logged_district: 644 — toti pot citi, doar managerul scrie */
     snprintf(path, sizeof(path), "%s/logged_district", district);
     fd = open(path, O_CREAT | O_WRONLY | O_APPEND, 0644);
     if (fd != -1) close(fd);
@@ -134,18 +97,12 @@ int init_district(const char *district) {
     return 0;
 }
 
-/* ============================================================
-   SYMLINKS
-   Creeaza active_reports-<district> -> <district>/reports.dat
-   Folosim lstat() (nu stat!) pentru a detecta dangling links.
-   ============================================================ */
+//Creeaza un shortcut pentru a ajunge mai usor la directorul pe care il cautam
 int create_active_symlink(const char *district) {
     char link_name[256];
     char target[256];
     snprintf(link_name, sizeof(link_name), "active_reports-%s", district);
     snprintf(target,    sizeof(target),    "%s/reports.dat",    district);
-
-    /* Daca exista deja (valid sau dangling), il stergem */
     struct stat lst;
     if (lstat(link_name, &lst) == 0) {
         unlink(link_name);
@@ -159,12 +116,12 @@ int create_active_symlink(const char *district) {
     return 0;
 }
 
+//se asigura ca directorul tinta chiar exista inainte de a il accesa
 void check_symlink(const char *district) {
     char link_name[256];
     snprintf(link_name, sizeof(link_name), "active_reports-%s", district);
 
     struct stat lst;
-    /* lstat ne da info despre link, nu despre tinta */
     if (lstat(link_name, &lst) == -1) {
         printf("[INFO] Symlink %s nu exista.\n", link_name);
         return;
@@ -173,7 +130,6 @@ void check_symlink(const char *district) {
         printf("[WARN] %s exista dar nu este symlink!\n", link_name);
         return;
     }
-    /* stat urmareste link-ul: daca esueaza => dangling */
     struct stat st;
     if (stat(link_name, &st) == -1) {
         printf("[AVERTISMENT] Dangling symlink: %s (tinta lipseste)\n", link_name);
@@ -183,10 +139,8 @@ void check_symlink(const char *district) {
     }
 }
 
-/* ============================================================
-   CMD_ADD — complet functional din schelet
-   ============================================================ */
-int cmd_add(const char *district, const char *role, const char *user) {
+//functia de adaugare propriu zisa a unui raport nou intr-un district
+int adauga_raport(const char *district, const char *role, const char *user) {
     char path[256];
     snprintf(path, sizeof(path), "%s/reports.dat", district);
 
@@ -230,12 +184,8 @@ int cmd_add(const char *district, const char *role, const char *user) {
     return 0;
 }
 
-/* ============================================================
-   CMD_LIST
-   Afiseaza metadatele fisierului (permisiuni, dimensiune, mtime)
-   si toate rapoartele din district.
-   ============================================================ */
-int cmd_list(const char *district, const char *role) {
+// functia care listeaza toate infromatile prezente intr-un district
+int list(const char *district, const char *role) {
     char path[256];
     snprintf(path, sizeof(path), "%s/reports.dat", district);
 
@@ -243,8 +193,6 @@ int cmd_list(const char *district, const char *role) {
         fprintf(stderr, "[EROARE] Rolul '%s' nu are acces de citire.\n", role);
         return -1;
     }
-
-    /* Afisam metadatele fisierului */
     struct stat st;
     if (stat(path, &st) == -1) { perror("stat"); return -1; }
 
@@ -266,7 +214,7 @@ int cmd_list(const char *district, const char *role) {
         return 0;
     }
 
-    /* Citim si afisam fiecare raport */
+    //citirea din fisier pentru fiecare raport si apoi afisarea
     int fd = open(path, O_RDONLY);
     if (fd == -1) { perror("open"); return -1; }
 
@@ -285,11 +233,8 @@ int cmd_list(const char *district, const char *role) {
     return 0;
 }
 
-/* ============================================================
-   CMD_VIEW
-   Afiseaza toate campurile unui singur raport dupa ID.
-   ============================================================ */
-int cmd_view(const char *district, const char *role, int report_id) {
+//functia de afisare in functie de ID a unui raport
+int view(const char *district, const char *role, int report_id) {
     char path[256];
     snprintf(path, sizeof(path), "%s/reports.dat", district);
 
@@ -330,12 +275,8 @@ int cmd_view(const char *district, const char *role, int report_id) {
     return 0;
 }
 
-/* ============================================================
-   CMD_REMOVE_REPORT
-   Sterge un raport prin shift de inregistrari + ftruncate.
-   Doar managerul poate sterge.
-   ============================================================ */
-int cmd_remove_report(const char *district, const char *role, int report_id) {
+//functia de stergere a unui raport
+int sterge_raport(const char *district, const char *role, int report_id) {
     if (strcmp(role, "manager") != 0) {
         fprintf(stderr, "[EROARE] Doar managerul poate sterge rapoarte.\n");
         return -1;
@@ -350,8 +291,6 @@ int cmd_remove_report(const char *district, const char *role, int report_id) {
     struct stat st;
     fstat(fd, &st);
     long total = (long)(st.st_size / sizeof(Report));
-
-    /* Gasim indexul raportului cu report_id */
     long del_idx = -1;
     Report r;
     for (long i = 0; i < total; i++) {
@@ -366,15 +305,13 @@ int cmd_remove_report(const char *district, const char *role, int report_id) {
         return -1;
     }
 
-    /* Shiftam: fiecare record dupa del_idx se muta cu o pozitie la stanga */
+    //Shiftarea dupa ce raportul a fost sters
     for (long i = del_idx + 1; i < total; i++) {
         lseek(fd, i * (off_t)sizeof(Report), SEEK_SET);
         read(fd, &r, sizeof(Report));
         lseek(fd, (i - 1) * (off_t)sizeof(Report), SEEK_SET);
         write(fd, &r, sizeof(Report));
     }
-
-    /* Scurtam fisierul cu un record */
     ftruncate(fd, (total - 1) * (off_t)sizeof(Report));
     close(fd);
 
@@ -383,13 +320,8 @@ int cmd_remove_report(const char *district, const char *role, int report_id) {
     return 0;
 }
 
-/* ============================================================
-   CMD_UPDATE_THRESHOLD
-   Actualizeaza pragul de severitate in district.cfg.
-   Doar managerul poate face asta, si doar daca permisiunile
-   fisierului sunt exact 640 (altfel refuzam).
-   ============================================================ */
-int cmd_update_threshold(const char *district, const char *role, int value) {
+//Functia de schimbare a thersholdului pentru escaladare
+int update_threshold(const char *district, const char *role, int value) {
     if (strcmp(role, "manager") != 0) {
         fprintf(stderr, "[EROARE] Doar managerul poate modifica threshold-ul.\n");
         return -1;
@@ -397,8 +329,6 @@ int cmd_update_threshold(const char *district, const char *role, int value) {
 
     char path[256];
     snprintf(path, sizeof(path), "%s/district.cfg", district);
-
-    /* Verificam ca permisiunile sunt exact 640 */
     struct stat st;
     if (stat(path, &st) == -1) { perror("stat"); return -1; }
     if ((st.st_mode & 0777) != 0640) {
@@ -424,12 +354,7 @@ int cmd_update_threshold(const char *district, const char *role, int value) {
     return 0;
 }
 
-/* ============================================================
-   FILTER — functii generate cu asistenta AI
-   parse_condition: sparge "field:op:value" in 3 parti
-   match_condition: verifica daca raportul satisface conditia
-   cmd_filter: logica de filtrare scrisa de student
-   ============================================================ */
+//FUNCTII GENERATE CU AJUTORUL AI
 int parse_condition(const char *input, char *field, char *op, char *value) {
     char tmp[128];
     strncpy(tmp, input, sizeof(tmp) - 1);
@@ -477,7 +402,7 @@ int match_condition(Report *r, const char *field,
     return 0;
 }
 
-int cmd_filter(const char *district, const char *role,
+int filter(const char *district, const char *role,
                int num_conds, char **cond_strs) {
     char path[256];
     snprintf(path, sizeof(path), "%s/reports.dat", district);
@@ -526,9 +451,6 @@ int cmd_filter(const char *district, const char *role,
     return 0;
 }
 
-/* ============================================================
-   MAIN
-   ============================================================ */
 static void usage(const char *prog) {
     fprintf(stderr,
         "Utilizare:\n"
@@ -569,16 +491,16 @@ int main(int argc, char *argv[]) {
 
     if (init_district(district) != 0) return 1;
 
-    if      (!strcmp(command, "add"))       return cmd_add(district, role, user);
-    else if (!strcmp(command, "list"))      return cmd_list(district, role);
-    else if (!strcmp(command, "view"))      return cmd_view(district, role, extra);
-    else if (!strcmp(command, "remove"))    return cmd_remove_report(district, role, extra);
-    else if (!strcmp(command, "threshold")) return cmd_update_threshold(district, role, extra);
+    if      (!strcmp(command, "add"))       return adauga_raport(district, role, user);
+    else if (!strcmp(command, "list"))      return list(district, role);
+    else if (!strcmp(command, "view"))      return view(district, role, extra);
+    else if (!strcmp(command, "remove"))    return sterge_raport(district, role, extra);
+    else if (!strcmp(command, "threshold")) return update_threshold(district, role, extra);
     else if (!strcmp(command, "filter")) {
         int cond_start = 0;
         for (int i = 1; i < argc; i++)
             if (!strcmp(argv[i], "--filter")) { cond_start = i + 2; break; }
-        return cmd_filter(district, role,
+        return filter(district, role,
                           argc - cond_start,
                           cond_start < argc ? &argv[cond_start] : NULL);
     }
