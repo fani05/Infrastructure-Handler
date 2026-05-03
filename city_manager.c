@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <errno.h>
+#include <sys/wait.h>
 
 //structura de date pentru rapoarte
 typedef struct {
@@ -451,6 +452,47 @@ int filter(const char *district, const char *role,
     return 0;
 }
 
+int remove_district(const char *district, const char *role) {
+    if (strcmp(role, "manager") != 0) {
+        fprintf(stderr, "[EROARE] Doar managerul poate sterge un district.\n");
+        return -1;
+    }
+ 
+    struct stat st;
+    if (stat(district, &st) == -1) {
+        fprintf(stderr, "[EROARE] Districtul '%s' nu exista.\n", district);
+        return -1;
+    }
+    if (!S_ISDIR(st.st_mode)) {
+        fprintf(stderr, "[EROARE] '%s' nu este un director.\n", district);
+        return -1;
+    }
+ 
+    char link_name[256];
+    snprintf(link_name, sizeof(link_name), "active_reports-%s", district);
+    unlink(link_name);
+ 
+    pid_t pid = fork();
+    if (pid < 0) { perror("fork"); return -1; }
+ 
+    if (pid == 0) {
+        execlp("rm", "rm", "-rf", district, (char *)NULL);
+        perror("execlp");
+        exit(1);
+    }
+ 
+    int status;
+    waitpid(pid, &status, 0);
+ 
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        fprintf(stderr, "[EROARE] rm -rf a esuat pentru '%s'.\n", district);
+        return -1;
+    }
+ 
+    printf("[SUCCES] Districtul '%s' a fost sters complet.\n", district);
+    return 0;
+}
+
 static void usage(const char *prog) {
     fprintf(stderr,
         "Utilizare:\n"
@@ -480,6 +522,7 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--remove_report")    && i+2 < argc) { command  = "remove";    district = argv[++i]; extra = atoi(argv[++i]); }
         else if (!strcmp(argv[i], "--update_threshold") && i+2 < argc) { command  = "threshold"; district = argv[++i]; extra = atoi(argv[++i]); }
         else if (!strcmp(argv[i], "--filter")           && i+1 < argc) { command  = "filter";    district = argv[++i]; }
+        else if (!strcmp(argv[i], "--remove_district") && i+1 < argc) { command  = "remove_district"; district = argv[++i];}
     }
 
     if (!role || !command || !district) { usage(argv[0]); return 1; }
@@ -488,8 +531,9 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     if (!user) user = "unknown";
-
-    if (init_district(district) != 0) return 1;
+    if (strcmp(command, "remove_district") != 0) {
+        if (init_district(district) != 0) return 1;
+    }
 
     if      (!strcmp(command, "add"))       return adauga_raport(district, role, user);
     else if (!strcmp(command, "list"))      return list(district, role);
