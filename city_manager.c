@@ -7,6 +7,7 @@
 #include <time.h>
 #include <errno.h>
 #include <sys/wait.h>
+#include <signal.h>
 
 //structura de date pentru rapoarte
 typedef struct {
@@ -139,6 +140,23 @@ void check_symlink(const char *district) {
                link_name, (long long)st.st_size);
     }
 }
+//functia de notificare a monitorului
+static int notify_monitor(void) {
+    int fd = open(".monitor_pid", O_RDONLY);
+    if (fd == -1) return 0;
+
+    char buf[32];
+    memset(buf, 0, sizeof(buf));
+    ssize_t n = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (n <= 0) return 0;
+
+    pid_t monitor_pid = (pid_t)atoi(buf);
+    if (monitor_pid <= 0) return 0;
+
+    if (kill(monitor_pid, SIGUSR1) == -1) return 0;
+    return 1;
+}
 
 //functia de adaugare propriu zisa a unui raport nou intr-un district
 int adauga_raport(const char *district, const char *role, const char *user) {
@@ -180,6 +198,14 @@ int adauga_raport(const char *district, const char *role, const char *user) {
 
     log_action(district, role, user, "add");
     create_active_symlink(district);
+
+    if (notify_monitor()) {
+        log_action(district, role, user, "monitor_notificat");
+        printf("[INFO] Monitorul a fost notificat.\n");
+    } else {
+        log_action(district, role, user, "monitor_indisponibil");
+        printf("[INFO] Monitorul nu a putut fi notificat (nu ruleaza sau eroare).\n");
+    }
 
     printf("[SUCCES] Raportul #%d salvat in %s\n", next_id, path);
     return 0;

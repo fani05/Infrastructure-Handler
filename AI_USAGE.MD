@@ -80,4 +80,25 @@ Am inteles logica de transformare si separate a primului sir de caractere
 
 Am inteles mai bine cum sa pun mesaje de verficare pe parcurs pentru a putea urmarii logica AI-ului
 
+---
 
+## Phase 2 — Modificări city_manager și monitor_reports
+
+### Ce am folosit AI pentru în Phase 2
+
+În Phase 2 nu am folosit asistență AI pentru verificarea de cod si pentru a primii sugestii despre cum sa implementez monitorul
+
+### Sfaturi concrete primite de la AI
+
+**city_manager.c:**
+- ajustarea functiei de logging
+- linkuirea functilor cu monitorul
+
+**monitor_reports.c:**
+- eficientizarea si corectarea codului
+
+### Ce am învățat în Phase 2
+
+- Diferența dintre `signal()` și `sigaction()` 
+- De ce folosim `pause()` in loc de `sleep()` în buclă pentru procese
+  care așteaptă evenimente externe
