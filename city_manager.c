@@ -573,7 +573,7 @@ int main(int argc, char *argv[]) {
     if      (!strcmp(command, "add"))       return add_report(district, role, user);
     else if (!strcmp(command, "list"))      return list(district, role);
     else if (!strcmp(command, "view"))      return view(district, role, extra);
-    else if (!strcmp(command, "remove"))    return sterge_raport(district, role, extra);
+    else if (!strcmp(command, "remove"))    return delete_report(district, role, extra);
     else if (!strcmp(command, "threshold")) return update_threshold(district, role, extra);
     else if (!strcmp(command, "remove_district")) return remove_district(district, role);
     else if (!strcmp(command, "filter")) {

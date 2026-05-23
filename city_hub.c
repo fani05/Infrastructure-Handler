@@ -150,7 +150,7 @@ static void cmd_calculate_scores(char *districts_line) {
 
 static void stop_monitor(void) {
     if (hub_mon_pid > 0 && kill(hub_mon_pid, 0) == 0) {
-        printf("[hub] Opresc hub_mon (PID %d)...\n", (int)hub_mon_pid);
+        printf("[hub] Stopping hub_mon (PID %d)...\n", (int)hub_mon_pid);
         kill(hub_mon_pid, SIGTERM);
         wait(NULL);
         hub_mon_pid = -1;
